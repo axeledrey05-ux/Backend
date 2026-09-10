@@ -1,0 +1,82 @@
+# Se ejecuta desde esta misma carpeta (backend/) con:
+#   docker compose up -d --build
+# Este backend es autocontenido: no depende de otros repos para
+# levantarse (la BD vive en ./database, dentro de este mismo repo).
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_DATABASE: monitor_db
+      MYSQL_USER: monitor_user
+      MYSQL_PASSWORD: monitor_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+      - ./database/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: monitor_db
+      DB_USER: monitor_user
+      DB_PASSWORD: monitor_pass
+      FRONTEND_ORIGIN: http://localhost:5173
+    ports:
+      - "8080:80"
+
+  # Un colector por cada host sembrado en database/02_seed.sql.
+  # mac_address debe coincidir EXACTO con el ip_mac de ese host en la BD.
+  colector-equipo1:
+    build: ./python
+    restart: unless-stopped
+    depends_on:
+      - backend
+    mac_address: "02:42:ac:14:00:0b"
+    environment:
+      BACKEND_URL: http://backend/metricas/ingresar.php
+      ID_HOST: "1"
+      NOMBRE_EQUIPO: equipo-1
+      INTERVALO_SEG: "5"
+
+  colector-equipo2:
+    build: ./python
+    restart: unless-stopped
+    depends_on:
+      - backend
+    mac_address: "02:42:ac:14:00:0c"
+    environment:
+      BACKEND_URL: http://backend/metricas/ingresar.php
+      ID_HOST: "2"
+      NOMBRE_EQUIPO: equipo-2
+      INTERVALO_SEG: "5"
+
+  colector-equipo3:
+    build: ./python
+    restart: unless-stopped
+    depends_on:
+      - backend
+    mac_address: "02:42:ac:14:00:0d"
+    environment:
+      BACKEND_URL: http://backend/metricas/ingresar.php
+      ID_HOST: "3"
+      NOMBRE_EQUIPO: equipo-3
+      INTERVALO_SEG: "5"
+
+volumes:
+  db_data:
