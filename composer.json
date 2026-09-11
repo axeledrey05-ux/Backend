@@ -1,0 +1,21 @@
+{
+    "name": "equipo/monitor-backend",
+    "description": "API del proyecto Monitor. Estructura y estilo siguiendo PSR-1, PSR-4 y PSR-12.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.1",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Monitor\\": "",
+            "Monitor\\Sessions\\": "sessions/"
+        },
+        "classmap": [
+            "connection.php",
+            "services.php"
+        ]
+    }
+}
