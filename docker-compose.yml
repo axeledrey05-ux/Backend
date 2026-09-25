@@ -2,7 +2,7 @@
 #   docker compose up -d --build
 # Este backend es autocontenido: no depende de otros repos para
 # levantarse (la BD vive en ./database, dentro de este mismo repo).
-
+name: proyecto-monitor
 services:
   db:
     image: mysql:8.0
@@ -13,7 +13,7 @@ services:
       MYSQL_USER: monitor_user
       MYSQL_PASSWORD: monitor_pass
     ports:
-      - "3306:3306"
+      - "3308:3306"
     volumes:
       - ./database/01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
       - ./database/02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql

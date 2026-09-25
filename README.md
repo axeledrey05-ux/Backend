@@ -3,6 +3,11 @@
 API en PHP para el proyecto Monitor. Sigue la estructura y estándares
 pedidos en la actividad de Backend (PSR-1, PSR-4 y PSR-12 de PHP-FIG).
 
+## Integrantes
+
+* **Axel Edrey Zaragoza Bravo**
+* *Nombre de tu compañero/a*
+
 ## Estructura del repositorio
 
 ```
@@ -121,6 +126,34 @@ Usuario de prueba: **admin@monitor.com** / **admin123**
   `database/02_seed.sql`.
 - **Cómo se ejecuta:** dentro de su propio contenedor Docker (ver
   `docker-compose.yml`, servicios `colector-equipo1/2/3`).
+
+## Postman
+
+Colección: `[Link o archivo .json de la colección de Postman — pendiente de agregar]`
+
+Escenarios probados (ver evidencia/capturas en `[carpeta o link pendiente]`):
+- [ ] Login con datos correctos.
+- [ ] Login con datos incorrectos (correo válido, contraseña equivocada).
+- [ ] Login con campos faltantes.
+- [ ] Login con usuario inexistente.
+- [ ] Petición a un endpoint protegido sin sesión iniciada.
+- [ ] Creación de host/alerta con datos válidos.
+- [ ] Creación de alerta con formato inválido (por ejemplo `valor_limite` como texto).
+- [ ] Consulta de historial con rango de fechas inválido (fecha inicial mayor a la final).
+- [ ] Consulta de historial sin registros en el rango.
+
+## Problemas conocidos / consideraciones especiales
+
+- No se permite crear dos umbrales activos para la misma métrica en el mismo
+  equipo; el Frontend valida esto antes de llamar a `alertas/crear.php`, pero
+  el Backend no lo rechaza a nivel de base de datos (no hay una restricción
+  `UNIQUE` sobre `(id_host, metrica)` en `alertas_umbrales`, ya que sí se
+  permite tener el umbral inactivo y uno nuevo activo). Queda documentado
+  como una decisión de diseño, no como una limitación de la base de datos.
+- El puerto publicado de MySQL (`3306` por defecto en `docker-compose.yml`)
+  puede chocar con otro MySQL corriendo en la misma máquina; si eso pasa,
+  cambia el primer número del mapeo de puertos (por ejemplo a `3307:3306`)
+  sin tocar nada más.
 
 ## Preguntas de investigación (PSR) — resumen para la revisión
 

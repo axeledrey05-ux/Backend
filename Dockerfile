@@ -12,12 +12,11 @@ COPY --from=composer_stage /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Se copia primero solo composer.json para aprovechar el cache de Docker:
-# si el código cambia pero las dependencias no, no se reinstalan de nuevo.
-COPY composer.json ./
-RUN composer install --no-dev --no-interaction --optimize-autoloader
-
+# Se copia todo el código antes de composer install: el autoload usa
+# "classmap" para connection.php y services.php, que necesita encontrar
+# esos archivos físicamente en ese momento (no solo composer.json).
 COPY . /var/www/html/
+RUN composer install --no-dev --no-interaction --optimize-autoloader
 
 RUN a2enmod rewrite
 
