@@ -66,7 +66,7 @@ class Services
         $existe->execute(['email' => $email]);
 
         if ($existe->fetch()) {
-            Tools::mal(Errors::VALIDACION);
+            Tools::mal(Errors::YA_EXISTE);
         }
 
         $hash = password_hash($contrasena, PASSWORD_DEFAULT);
@@ -124,7 +124,7 @@ class Services
         $duplicado->execute(['mac' => $mac]);
 
         if ($duplicado->fetch()) {
-            Tools::mal(Errors::VALIDACION);
+            Tools::mal(Errors::YA_EXISTE);
         }
 
         $insertar = $pdo->prepare(
@@ -138,7 +138,12 @@ class Services
             'mac' => $mac,
         ]);
 
-        Tools::bien(['id_host' => (int) $pdo->lastInsertId()], 201);
+        Tools::bien([
+            'id_host' => (int) $pdo->lastInsertId(),
+            'nombre_host' => $nombreHost,
+            'ip_direccion' => $ip,
+            'ip_mac' => $mac,
+        ], 201);
     }
 
     /**
@@ -182,6 +187,20 @@ class Services
         Tools::bien($consulta->fetch() ?: null);
     }
 
+    /**
+     * Historial de lecturas de un host en un rango de fechas.
+     *
+     * Un equipo que manda una lectura cada 5 s genera ~17,000 filas por
+     * día, y mandarlas todas al navegador lo hace lento. Por eso NO se
+     * devuelven las lecturas crudas: el rango completo se divide en
+     * `max_puntos` intervalos iguales y de cada uno se devuelve el
+     * PROMEDIO de CPU/RAM/Disco. Así siempre se cubre TODO el rango
+     * (nada se "corta"), pero la respuesta pesa unos pocos KB sin
+     * importar cuántos datos tenga el equipo.
+     *
+     * Parámetros GET: id_host, inicio, fin (Y-m-d) y max_puntos
+     * (opcional, 50-2000, por defecto 600).
+     */
     public static function historial(): never
     {
         $usuario = Session::exigirSesion();
@@ -192,16 +211,52 @@ class Services
         $fin = ValueValidation::validarFecha(ValueValidation::validarObligatorio($_GET['fin'] ?? null));
         ValueValidation::validarRangoDeFechas($inicio, $fin);
 
+        $maxPuntos = 600;
+        if (isset($_GET['max_puntos'])) {
+            $maxPuntos = ValueValidation::validarId($_GET['max_puntos']);
+            if ($maxPuntos < 50 || $maxPuntos > 2000) {
+                Tools::mal(Errors::VALIDACION);
+            }
+        }
+
+        // Tamaño (en segundos) de cada intervalo. Es un entero calculado
+        // aquí mismo (no viene del usuario), por eso puede ir directo en
+        // el SQL sin riesgo de inyección.
+        $segundosRango = (new \DateTimeImmutable($fin))->modify('+1 day')->getTimestamp()
+            - (new \DateTimeImmutable($inicio))->getTimestamp();
+        $intervalo = max(1, (int) ceil($segundosRango / $maxPuntos));
+
         $pdo = Connection::obtener();
         $consulta = $pdo->prepare(
-            'SELECT cpu, ram, disco, fecha_hora FROM lecturas
-             WHERE id_host = :id_host AND fecha_hora >= :inicio
-               AND fecha_hora < DATE_ADD(:fin, INTERVAL 1 DAY)
-             ORDER BY fecha_hora ASC'
+            "SELECT FROM_UNIXTIME(cubeta * {$intervalo}) AS fecha_hora,
+                    ROUND(AVG(cpu), 2) AS cpu,
+                    ROUND(AVG(ram), 2) AS ram,
+                    ROUND(AVG(disco), 2) AS disco,
+                    COUNT(*) AS lecturas
+             FROM (
+                 SELECT FLOOR(UNIX_TIMESTAMP(fecha_hora) / {$intervalo}) AS cubeta, cpu, ram, disco
+                 FROM lecturas
+                 WHERE id_host = :id_host AND fecha_hora >= :inicio
+                   AND fecha_hora < DATE_ADD(:fin, INTERVAL 1 DAY)
+             ) AS agrupadas
+             GROUP BY cubeta
+             ORDER BY cubeta ASC"
         );
         $consulta->execute(['id_host' => $idHost, 'inicio' => $inicio, 'fin' => $fin]);
+        $filas = $consulta->fetchAll();
 
-        Tools::bien($consulta->fetchAll());
+        $totalLecturas = 0;
+        foreach ($filas as &$fila) {
+            $totalLecturas += (int) $fila['lecturas'];
+            unset($fila['lecturas']);
+        }
+        unset($fila);
+
+        Tools::bien([
+            'intervalo_segundos' => $intervalo,
+            'total_lecturas' => $totalLecturas,
+            'datos' => $filas,
+        ]);
     }
 
     /**

@@ -40,9 +40,13 @@ services:
     ports:
       - "8080:80"
 
-  # Un colector por cada host sembrado en database/02_seed.sql.
-  # mac_address debe coincidir EXACTO con el ip_mac de ese host en la BD.
+  # Colectores SIMULADOS (equipo-1/2/3). Solo arrancan con:
+  #   docker compose --profile demo up -d
+  # y requieren haber cargado database/demo_equipos.sql. Para monitorear un
+  # equipo REAL no se usa Docker: se corre python/colector.py directo en
+  # esa máquina (ver README).
   colector-equipo1:
+    profiles: ["demo"]
     build: ./python
     restart: unless-stopped
     depends_on:
@@ -55,6 +59,7 @@ services:
       INTERVALO_SEG: "5"
 
   colector-equipo2:
+    profiles: ["demo"]
     build: ./python
     restart: unless-stopped
     depends_on:
@@ -67,6 +72,7 @@ services:
       INTERVALO_SEG: "5"
 
   colector-equipo3:
+    profiles: ["demo"]
     build: ./python
     restart: unless-stopped
     depends_on:

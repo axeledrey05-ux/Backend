@@ -17,7 +17,8 @@ namespace Monitor;
  *   1 = validación de datos        4 = registro no encontrado
  *   2 = parámetro faltante          5 = base de datos
  *   3 = autenticación / sesión      6 = permisos (usuario sin autorización)
- *   7 = servicio/ruta inexistente   9 = error interno / desconocido
+ *   7 = servicio/ruta inexistente   8 = el registro ya existe (duplicado)
+ *   9 = error interno / desconocido
  */
 enum Errors: string
 {
@@ -32,6 +33,8 @@ enum Errors: string
     case SIN_PERMISO = '{"Error":{"Type":1,"Category":6,"Description":"El usuario no tiene permiso para realizar esta accion."}}';
 
     case NO_ENCONTRADO = '{"Error":{"Type":1,"Category":4,"Description":"El registro solicitado no existe."}}';
+
+    case YA_EXISTE = '{"Error":{"Type":1,"Category":8,"Description":"Ya existe un registro con esos datos."}}';
 
     case SERVICIO_NO_ENCONTRADO = '{"Error":{"Type":1,"Category":7,"Description":"El servicio o ruta solicitada no existe."}}';
 
@@ -60,6 +63,7 @@ enum Errors: string
             self::NO_AUTENTICADO, self::SESION_INVALIDA => 401,
             self::SIN_PERMISO => 403,
             self::NO_ENCONTRADO, self::SERVICIO_NO_ENCONTRADO => 404,
+            self::YA_EXISTE => 409,
             self::ERROR_BASE_DATOS, self::ERROR_INTERNO => 500,
         };
     }

@@ -105,11 +105,55 @@ cd backend
 docker compose up -d --build
 ```
 
-Esto levanta: `db` (MySQL con el esquema y datos de prueba ya cargados),
-`backend` (API PHP en `http://localhost:8080`) y tres colectores de Python
-que simulan `equipo-1`, `equipo-2` y `equipo-3`.
+Esto levanta: `db` (MySQL con el esquema y el usuario administrador) y
+`backend` (API PHP en `http://localhost:8080`). Ya no se siembran equipos:
+cada persona crea su cuenta y registra los suyos (ver siguiente sección).
 
-Usuario de prueba: **admin@monitor.com** / **admin123**
+Usuario administrador: **admin@monitor.com** / **admin123**
+
+Los 3 colectores simulados (`equipo-1/2/3`) quedaron como opcionales, solo
+para demostraciones: `docker compose --profile demo up -d` (y cargar antes
+`database/demo_equipos.sql`).
+
+**Si tu base de datos ya existía** (el seed solo corre con la BD vacía) y quieres
+quitar los 3 equipos de prueba que estaban a nombre del administrador:
+
+```bash
+docker compose exec -T db mysql -uroot -proot_pass monitor_db < database/limpiar_demo.sql
+```
+
+## Cuentas y equipos propios
+
+- **Crear cuenta:** pantalla `/registro` del Frontend (usa `registro.php`).
+- **Aislamiento:** cada equipo pertenece a un solo usuario. Todos los endpoints
+  (`hosts/listar`, `metricas/*`, `alertas/*`) filtran o validan contra el
+  `id_usuario` de la sesión (`exigirHostDelUsuario`), así que una cuenta nunca
+  ve ni consulta equipos de otra, incluyendo la del administrador. Pedir un
+  `id_host` ajeno responde 403.
+- **Registrar un equipo real** (sin Docker, en la máquina a monitorear):
+  1. `cd Backend/python && pip install -r requirements.txt`
+  2. `python colector.py --info` → muestra nombre, IP y MAC.
+  3. En el sitio, pantalla **Equipos** → capturar esos datos → aparece el `ID`.
+  4. Correr el colector con ese ID:
+     `ID_HOST=<id> BACKEND_URL=http://<ip-del-backend>:8080/metricas/ingresar.php python colector.py`
+     (en PowerShell: `$env:ID_HOST="<id>"; $env:BACKEND_URL="http://<ip>:8080/metricas/ingresar.php"; python colector.py`).
+     Si el colector está en otra computadora que el Backend, usar la IP de la
+     máquina del Backend (y permitir el puerto 8080 en su firewall).
+
+## Historial con muchos datos
+
+`metricas/historial.php` no envía las lecturas crudas (un equipo con lectura
+cada 5 s genera ~17,000 filas al día). Divide el rango pedido en máximo
+`max_puntos` intervalos (600 por defecto, entre 50 y 2000) y devuelve el
+promedio de cada uno:
+
+```json
+{ "intervalo_segundos": 144, "total_lecturas": 17280,
+  "datos": [ { "fecha_hora": "...", "cpu": "12.50", "ram": "48.10", "disco": "61.00" } ] }
+```
+
+Se cubre siempre todo el rango, pero la respuesta pesa unos KB. El Frontend
+muestra esos puntos con una barra inferior para acercarse y recorrer el periodo.
 
 ## Python — colector de métricas
 
