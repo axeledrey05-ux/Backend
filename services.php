@@ -146,6 +146,46 @@ class Services
         ], 201);
     }
 
+    public static function actualizarHost(): never
+    {
+        $usuario = Session::exigirSesion();
+
+        $datos = Tools::leerJsonBody();
+        $idHost = ValueValidation::validarId(ValueValidation::validarObligatorio($datos['id_host'] ?? null));
+        self::exigirHostDelUsuario($idHost, $usuario['id_usuario']);
+
+        $nombreHost = ValueValidation::validarTexto(ValueValidation::validarObligatorio($datos['nombre_host'] ?? null), 2, 100);
+        $ip = ValueValidation::validarIp(ValueValidation::validarObligatorio($datos['ip_direccion'] ?? null));
+        $mac = strtolower(ValueValidation::validarMac(ValueValidation::validarObligatorio($datos['ip_mac'] ?? null)));
+
+        $pdo = Connection::obtener();
+
+        // La MAC es unica: no puede coincidir con la de OTRO equipo (el mismo si puede conservarla).
+        $duplicado = $pdo->prepare('SELECT id_host FROM hosts WHERE ip_mac = :mac AND id_host <> :id_host LIMIT 1');
+        $duplicado->execute(['mac' => $mac, 'id_host' => $idHost]);
+
+        if ($duplicado->fetch()) {
+            Tools::mal(Errors::YA_EXISTE);
+        }
+
+        $actualizar = $pdo->prepare(
+            'UPDATE hosts SET nombre_host = :nombre_host, ip_direccion = :ip, ip_mac = :mac WHERE id_host = :id_host'
+        );
+        $actualizar->execute([
+            'nombre_host' => $nombreHost,
+            'ip' => $ip,
+            'mac' => $mac,
+            'id_host' => $idHost,
+        ]);
+
+        Tools::bien([
+            'id_host' => $idHost,
+            'nombre_host' => $nombreHost,
+            'ip_direccion' => $ip,
+            'ip_mac' => $mac,
+        ]);
+    }
+
     /**
      * Verifica que un host exista Y pertenezca al usuario en sesión.
      * Si no, corta la ejecución con el error apropiado. Se usa en
