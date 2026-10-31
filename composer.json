@@ -10,12 +10,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Monitor\\": "",
-            "Monitor\\Sessions\\": "sessions/"
-        },
-        "classmap": [
-            "connection.php",
-            "services.php"
-        ]
+            "Monitor\\": "src/"
+        }
     }
 }

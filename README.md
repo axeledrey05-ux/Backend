@@ -12,74 +12,119 @@ pedidos en la actividad de Backend (PSR-1, PSR-4 y PSR-12 de PHP-FIG).
 
 ```
 backend/
-├── composer.json          # Autoload PSR-4 + classmap
-├── bootstrap.php           # Autoload + manejadores de error + CORS (usado por todos los endpoints)
-├── connection.php          # Conexión PDO a MySQL (clase Connection)
-├── Errors.php               # Enum con el catálogo de errores {Type, Category, Description}
-├── Tools.php                 # Funciones auxiliares de petición/respuesta (clase Tools)
-├── ValueValidation.php        # Validaciones reutilizables (clase ValueValidation)
-├── services.php                # Lógica de negocio de todos los endpoints (clase Services)
-├── sessions/
-│   └── Session.php               # Manejo de sesión y cookie (clase Session)
-├── config/
-│   └── config.php                  # Configuración leída de variables de entorno (sin secretos)
-├── database/
-│   ├── 01_schema.sql                 # Creación de la BD y tablas
-│   └── 02_seed.sql                    # Usuario, hosts y alertas de prueba
-├── python/
-│   ├── colector.py                      # Colector de métricas (ver sección Python)
-│   ├── requirements.txt
-│   └── Dockerfile
-├── login.php, registro.php, logout.php, sesion.php   # Endpoints raíz
-├── hosts/       (listar.php, registrar.php)
-├── metricas/    (actual.php, historial.php, ingresar.php)
-├── alertas/     (listar.php, crear.php, actualizar.php, eliminar.php)
+├── composer.json            # Autoload PSR-4: Monitor\ => src/
+├── bootstrap.php             # Autoload + manejadores de error + CORS (lo usa todo endpoint)
+├── src/
+│   ├── Errors.php             # Enum de errores {Type, Category, Description} + responder() + manejadores globales
+│   ├── Tools.php               # Auxiliares de petición/respuesta: leerJsonBody, bien, enviarJson, CORS
+│   ├── ValueValidation.php     # Validaciones reutilizables
+│   ├── Connection.php          # Conexión PDO a MySQL
+│   ├── Sessions/Session.php    # Sesión y cookie de sesión
+│   ├── Repositories/           # TODO el SQL (Usuario, Host, Lectura, Alerta)
+│   └── Services/               # Lógica de cada endpoint (Auth, Host, Metrica, Alerta)
+├── config/config.php          # Configuración leída de variables de entorno
+├── database/                  # Esquema y datos de prueba
+├── python/                    # Colector de métricas
+├── auth/                     # login.php, registro.php, logout.php, sesion.php
+├── hosts/  metricas/  alertas/                       # Endpoints por dominio
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
+**Flujo de una petición:** endpoint (`hosts/listar.php`) → `Services\*` → `ValueValidation` → `Sessions\Session` (si aplica) → `Repositories\*` → `Connection` → BD → `Tools::bien()` / `Errors::X->responder()`.
+
 ### Responsabilidad de cada archivo/carpeta
 
-- **`connection.php`** — únicamente abre y reutiliza la conexión PDO a MySQL
+- **`src/Connection.php`** — únicamente abre y reutiliza la conexión PDO a MySQL
   (host, puerto, usuario, contraseña y nombre de BD vienen de `config/config.php`).
   Si la conexión falla, responde `Errors::ERROR_BASE_DATOS` sin exponer el
   detalle real del error al cliente (ese detalle sí queda en el log del servidor).
-- **`Errors.php`** — un *enum* de PHP con un caso por cada tipo de error posible.
+- **`src/Errors.php`** — un *enum* de PHP con un caso por cada tipo de error posible.
   Cada caso guarda un JSON `{Type, Category, Description}` (`Type`: 1 = error de
   cliente, 2 = error de servidor) y sabe su propio código HTTP (`httpCode()`).
-  Así, cualquier archivo que necesite reportar "sesión no iniciada" usa
-  `Errors::NO_AUTENTICADO` en vez de inventar un string distinto cada vez.
-- **`Tools.php`** — solo mecánica de petición/respuesta: enviar el JSON con el
-  formato `{estado, respuesta, error}`, leer el body JSON, configurar CORS y
-  registrar los manejadores globales de errores no controlados de PHP.
-- **`ValueValidation.php`** — cada función valida un tipo de dato y **devuelve
+  Además concentra la **respuesta de error** (`Errors::X->responder()`) y los
+  **manejadores globales** de excepciones/errores de PHP (`registrarManejadores()`),
+  para que el Backend nunca responda HTML.
+- **`src/Tools.php`** — solo auxiliares de petición/respuesta: enviar el JSON con
+  el formato `{estado, respuesta, error}` (`enviarJson`, `bien`), leer el body JSON
+  (`leerJsonBody`) y configurar CORS (`configurarCors`).
+- **`src/ValueValidation.php`** — cada función valida un tipo de dato y **devuelve
   el valor ya tipado** (ej. `validarId($valor): int`); si el valor es inválido,
   ella misma corta la petición con el error correspondiente, para que el código
   que la llama no tenga que revisar un booleano de retorno.
-- **`services.php`** — un método público por endpoint. Sigue siempre el mismo
-  flujo: recibe la petición → valida con `ValueValidation` → revisa la sesión
-  con `Session` (si aplica) → consulta `Connection` → responde con `Tools`.
-- **`sessions/Session.php`** — crea la sesión de PHP, guarda `id_usuario` en
+- **`src/Sessions/Session.php`** — crea la sesión de PHP, guarda `id_usuario` en
   `$_SESSION`, valida si hay sesión activa y la destruye en logout.
+- **`src/Repositories/*`** — **todo el SQL** del proyecto, una clase por tabla
+  (`UsuarioRepository`, `HostRepository`, `LecturaRepository`, `AlertaRepository`).
+  No validan ni responden: solo consultan y devuelven datos.
+- **`src/Services/*`** — la lógica de cada endpoint, una clase por dominio
+  (`AuthService`, `HostService`, `MetricaService`, `AlertaService`). Siguen siempre
+  el mismo flujo: validar con `ValueValidation` → revisar sesión con `Session`
+  (si aplica) → consultar el `Repository` → responder con `Tools`/`Errors`.
+- **`auth/`, `hosts/`, `metricas/`, `alertas/`** — los archivos de entrada
+  (routers) de cada módulo. Son intencionalmente delgados: solo revisan el método
+  HTTP y llaman al método correspondiente de `Services`.
 - **`config/`** — valores de configuración generales. **No contiene contraseñas
   ni tokens reales**: todo se lee de variables de entorno (ver "Variables de
   entorno" abajo).
-- **`hosts/`, `metricas/`, `alertas/`** — los archivos de entrada (routers) de
-  cada módulo. Son intencionalmente delgados: solo revisan el método HTTP y
-  llaman al método correspondiente de `Services`.
 - **`python/`** — el colector que lee CPU/RAM/Disco del equipo y se los manda
   al Backend (ver sección Python más abajo).
 
-### Por qué `connection.php` y `services.php` no siguen el nombre-de-clase-igual-a-archivo de PSR-4
+### Por qué los endpoints no están dentro de `src/`
 
-PSR-4 espera que el nombre del archivo coincida exactamente con el de la clase
-que contiene (por eso `Errors.php` contiene `class Errors`, `Tools.php`
-contiene `class Tools`, etc.). Como la actividad pide los archivos
-`connection.php` y `services.php` en minúscula, esas dos clases
-(`Connection` y `Services`) se autoloadean con la sección `classmap` de
-`composer.json` en vez de `psr-4` — Composer las encuentra igual, solo que
-por un mecanismo distinto (escanea el archivo en vez de derivar la ruta del
-nombre de la clase).
+`src/` contiene solo clases (se cargan por autoload PSR-4: `Monitor\Services\AuthService`
+está en `src/Services/AuthService.php`). Los endpoints (`auth/`, `hosts/`, ...) quedan
+fuera porque son los archivos que el servidor web expone por URL y que el Frontend y
+el colector de Python llaman directamente (por ejemplo `/hosts/listar.php`).
+
+## Catálogo de endpoints
+
+Todos los endpoints responden JSON. La URL base es `http://localhost:8080`.
+
+| Endpoint | Método | Body / Parámetros | Sesión | Éxito | Descripción |
+|---|---|---|---|---|---|
+| `/auth/login.php` | POST | `{"email", "contrasena"}` | Pública | 200 | Valida credenciales e inicia sesión |
+| `/auth/registro.php` | POST | `{"nombre", "email", "contrasena"}` | Pública | 201 | Crea una cuenta nueva |
+| `/auth/logout.php` | POST | — | Requerida | 200 | Cierra y destruye la sesión |
+| `/auth/sesion.php` | GET | — | Requerida | 200 | Devuelve el usuario de la sesión activa |
+| `/hosts/listar.php` | GET | — | Requerida | 200 | Lista los equipos del usuario |
+| `/hosts/registrar.php` | POST | `{"nombre_host", "ip_direccion", "ip_mac"}` | Requerida | 201 | Registra un equipo |
+| `/hosts/actualizar.php` | PUT/POST | `{"id_host", "nombre_host", "ip_direccion", "ip_mac"}` | Requerida | 200 | Edita un equipo propio |
+| `/metricas/actual.php` | GET | `id_host` | Requerida | 200 | Última lectura del equipo |
+| `/metricas/historial.php` | GET | `id_host`, `inicio`, `fin` (Y-m-d), `max_puntos` (opcional) | Requerida | 200 | Promedios por intervalo en un rango |
+| `/metricas/ingresar.php` | POST | `{"id_host", "mac", "cpu", "ram", "disco"}` | Colector (id_host + MAC) | 201 | Guarda una lectura |
+| `/alertas/listar.php` | GET | `id_host` | Requerida | 200 | Lista los umbrales del equipo |
+| `/alertas/crear.php` | POST | `{"id_host", "metrica", "valor_limite"}` | Requerida | 201 | Crea un umbral (`metrica`: cpu, ram o disco) |
+| `/alertas/actualizar.php` | PUT/POST | `{"id_alerta", "valor_limite", "activo"}` | Requerida | 200 | Modifica un umbral propio |
+| `/alertas/eliminar.php` | POST/DELETE | `{"id_alerta"}` | Requerida | 200 | Elimina un umbral propio |
+
+## Formato de las respuestas
+
+Respuesta exitosa (200 / 201):
+
+```json
+{ "estado": "bien", "respuesta": { "...": "..." } }
+```
+
+Respuesta de error:
+
+```json
+{
+  "estado": "mal",
+  "respuesta": null,
+  "error": { "Type": 1, "Category": 3, "Description": "No hay una sesion iniciada." }
+}
+```
+
+| Error (`Errors::`) | HTTP | Cuándo ocurre |
+|---|---|---|
+| `VALIDACION`, `PARAMETRO_FALTANTE` | 422 | Campos inválidos o faltantes (incluye contraseña incorrecta en login) |
+| `NO_AUTENTICADO`, `SESION_INVALIDA` | 401 | No hay sesión iniciada o ya expiró |
+| `SIN_PERMISO` | 403 | El host/alerta existe pero pertenece a otro usuario |
+| `NO_ENCONTRADO` | 404 | El registro no existe (incluye usuario inexistente en login) |
+| `SERVICIO_NO_ENCONTRADO` | 404 | Método HTTP no permitido en ese endpoint |
+| `YA_EXISTE` | 409 | Correo o MAC ya registrados |
+| `ERROR_BASE_DATOS`, `ERROR_INTERNO` | 500 | Fallo de MySQL o error no controlado |
 
 ## Variables de entorno
 
@@ -124,7 +169,7 @@ docker compose exec -T db mysql -uroot -proot_pass monitor_db < database/limpiar
 
 ## Cuentas y equipos propios
 
-- **Crear cuenta:** pantalla `/registro` del Frontend (usa `registro.php`).
+- **Crear cuenta:** pantalla `/registro` del Frontend (usa `auth/registro.php`).
 - **Aislamiento:** cada equipo pertenece a un solo usuario. Todos los endpoints
   (`hosts/listar`, `metricas/*`, `alertas/*`) filtran o validan contra el
   `id_usuario` de la sesión (`exigirHostDelUsuario`), así que una cuenta nunca
@@ -175,16 +220,24 @@ muestra esos puntos con una barra inferior para acercarse y recorrer el periodo.
 
 Colección: `[Link o archivo .json de la colección de Postman — pendiente de agregar]`
 
-Escenarios probados (ver evidencia/capturas en `[carpeta o link pendiente]`):
-- [ ] Login con datos correctos.
-- [ ] Login con datos incorrectos (correo válido, contraseña equivocada).
-- [ ] Login con campos faltantes.
-- [ ] Login con usuario inexistente.
-- [ ] Petición a un endpoint protegido sin sesión iniciada.
-- [ ] Creación de host/alerta con datos válidos.
-- [ ] Creación de alerta con formato inválido (por ejemplo `valor_limite` como texto).
-- [ ] Consulta de historial con rango de fechas inválido (fecha inicial mayor a la final).
-- [ ] Consulta de historial sin registros en el rango.
+Casos de prueba y resultado esperado (marca la columna "Resultado" al probarlos
+y guarda la captura en `[carpeta o link pendiente]`):
+
+| # | Caso | Endpoint | Entrada | HTTP esperado | Resultado |
+|---|---|---|---|---|---|
+| 1 | Login correcto | POST `/auth/login.php` | email y contraseña válidos | 200 | [ ] |
+| 2 | Contraseña incorrecta | POST `/auth/login.php` | email válido, contraseña errónea | 422 | [ ] |
+| 3 | Campos vacíos en login | POST `/auth/login.php` | email o contraseña faltantes | 422 | [ ] |
+| 4 | Usuario inexistente | POST `/auth/login.php` | email no registrado | 404 | [ ] |
+| 5 | Endpoint protegido sin sesión | GET `/hosts/listar.php` | sin cookie de sesión | 401 | [ ] |
+| 6 | Lectura actual | GET `/metricas/actual.php?id_host=<id>` | con sesión | 200 | [ ] |
+| 7 | Host ajeno | GET `/metricas/actual.php?id_host=<id de otro usuario>` | con sesión | 403 | [ ] |
+| 8 | Historial válido | GET `/metricas/historial.php` | `id_host`, `inicio`, `fin` válidos | 200 | [ ] |
+| 9 | Historial con rango inválido | GET `/metricas/historial.php` | `inicio` mayor que `fin` | 422 | [ ] |
+| 10 | Alta de alerta | POST `/alertas/crear.php` | `metrica` y `valor_limite` válidos | 201 | [ ] |
+| 11 | Alerta con formato inválido | POST `/alertas/crear.php` | `valor_limite` como texto | 422 | [ ] |
+| 12 | Modificar alerta | POST `/alertas/actualizar.php` | `id_alerta` propio | 200 | [ ] |
+| 13 | Eliminar alerta | POST `/alertas/eliminar.php` | `id_alerta` propio | 200 | [ ] |
 
 ## Problemas conocidos / consideraciones especiales
 
@@ -246,3 +299,28 @@ Escenarios probados (ver evidencia/capturas en `[carpeta o link pendiente]`):
   lea la cookie (mitiga XSS), `samesite=Lax` limita el envío entre sitios
   (mitiga CSRF básico), y la regeneración de ID en login evita que un ID de
   sesión robado/adivinado antes del login siga siendo válido después.
+
+## Preguntas teóricas para la defensa del Backend
+
+- **¿Cómo sabe el Backend que una petición viene de un usuario con sesión iniciada?**
+  El navegador envía la cookie `PHPSESSID`; `Session::exigirSesion()` busca el
+  archivo de sesión correspondiente en el servidor y revisa que tenga `id_usuario`.
+  Si no existe, responde `Errors::NO_AUTENTICADO` (401) y corta la ejecución.
+- **¿Por qué se usa PDO y no SQL concatenado?** PDO usa sentencias preparadas con
+  parámetros enlazados (`:id_host`), por lo que los datos del usuario nunca se
+  mezclan con el texto del SQL y se evita la inyección SQL. Todo el SQL vive en
+  `Repositories/`.
+- **¿Por qué se separó `services.php` en Services y Repositories?** Porque mezclaba
+  validación, sesión, SQL, procesamiento y respuestas. Ahora cada capa tiene una
+  sola responsabilidad: el Service decide qué hacer y el Repository solo habla con la BD.
+- **¿Cómo se evita que un usuario vea equipos de otro?** `HostService::exigirHostDelUsuario()`
+  compara el dueño del host con el usuario de la sesión: 404 si no existe, 403 si es de otro.
+- **¿Cómo se comunica Python con el Backend?** El colector lee CPU/RAM/Disco con
+  `psutil` y hace un POST a `metricas/ingresar.php` con `id_host` y su MAC; el Backend
+  solo guarda la lectura si esa pareja coincide con la tabla `hosts`.
+- **¿Por qué el historial devuelve promedios y no todas las lecturas?** Un equipo genera
+  ~17,000 lecturas al día; el Backend divide el rango en máximo `max_puntos` intervalos
+  y promedia cada uno, así la respuesta pesa pocos KB.
+- **¿Qué ganó el proyecto con la reorganización?** Código sin repetir, un archivo por
+  responsabilidad, autoload PSR-4 con una sola regla y cambios más fáciles de ubicar:
+  si cambia una tabla se toca un Repository, si cambia una regla de negocio un Service.

@@ -5,11 +5,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../bootstrap.php';
 
 use Monitor\Errors;
-use Monitor\Services;
-use Monitor\Tools;
+use Monitor\Services\AlertaService;
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    Tools::mal(Errors::SERVICIO_NO_ENCONTRADO);
+    Errors::SERVICIO_NO_ENCONTRADO->responder();
 }
 
-Services::crearAlerta();
+AlertaService::crear();

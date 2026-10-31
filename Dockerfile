@@ -12,9 +12,8 @@ COPY --from=composer_stage /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
-# Se copia todo el código antes de composer install: el autoload usa
-# "classmap" para connection.php y services.php, que necesita encontrar
-# esos archivos físicamente en ese momento (no solo composer.json).
+# Se copia todo el código antes de composer install para que el autoload
+# PSR-4 (Monitor\ => src/) quede generado con las clases ya presentes.
 COPY . /var/www/html/
 RUN composer install --no-dev --no-interaction --optimize-autoloader
 
