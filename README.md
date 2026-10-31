@@ -6,7 +6,7 @@ pedidos en la actividad de Backend (PSR-1, PSR-4 y PSR-12 de PHP-FIG).
 ## Integrantes
 
 * **Axel Edrey Zaragoza Bravo**
-* *Nombre de tu compañero/a*
+* *Jose Ulises Robledo Gutierrez*
 
 ## Estructura del repositorio
 
